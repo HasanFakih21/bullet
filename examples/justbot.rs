@@ -35,7 +35,7 @@ const BUCKET_LAYOUT: [usize; 32] = [
 const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
-    let dataset_path = "/home/hasan/Chess-Engine/bullet/combined.vf";
+    let dataset_path = "/home/hasan/Chess-Engine/bullet/data/combined.vf";
     let net_id = "540-v1-1024HL";
 
     // hyperparams to fiddle with
