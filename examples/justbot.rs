@@ -36,14 +36,15 @@ const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
     let dataset_path = "/home/hasan/Chess-Engine/bullet/data/combined.vf";
-    let net_id = "540-v1-1024HL";
+    let net_id = "595-v1-1024HL";
 
     // hyperparams to fiddle with
     let hl_size = 1024;
     let initial_lr = 0.001;
     let final_lr = 0.001 * 0.3f32.powi(5);
     let superbatches = 640;
-    let wdl_proportion = 0.85;
+    let initial_wdl = 0.85;
+    let final_wdl = 0.99;
 
     let mut trainer = ValueTrainerBuilder::default()
         .dual_perspective()
@@ -99,7 +100,7 @@ fn main() {
             start_superbatch: 1,
             end_superbatch: superbatches,
         },
-        wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
+        wdl_scheduler: wdl::LinearWDL { start: initial_wdl, end: final_wdl },
         lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
         save_rate: 128,
     };
@@ -108,7 +109,7 @@ fn main() {
 
     // loading from a Viriformat binpack
     let data_loader = {
-        use loader::viribinpack::{Filter, ViriBinpackLoader, ViriFilter};
+        use loader::viribinpack::{ViriBinpackLoader, ViriFilter};
 
         let file_path = dataset_path;
         let buffer_size_mb = 1024;
@@ -116,7 +117,9 @@ fn main() {
 
         // The `viriformat` crate exposes a useful `Filter` of its own, but you can also
         // use a custom function like for SF binpacks with `ViriFilter::custom(function)`
-        let filter = ViriFilter::Builtin(Filter::default());
+        #[path = "advanced/filter.rs"]
+        mod advanced_filter;
+        let filter = ViriFilter::Custom(advanced_filter::should_keep);
 
         ViriBinpackLoader::new(file_path, buffer_size_mb, threads, filter)
     };
