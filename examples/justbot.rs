@@ -36,15 +36,15 @@ const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
     let dataset_path = "/home/hasan/Chess-Engine/bullet/data/combined.vf";
-    let net_id = "595-v1-1024HL";
+    let net_id = "595b-1024";
 
     // hyperparams to fiddle with
     let hl_size = 1024;
     let initial_lr = 0.001;
     let final_lr = 0.001 * 0.3f32.powi(5);
     let superbatches = 640;
-    let initial_wdl = 0.85;
-    let final_wdl = 0.99;
+    let initial_wdl = 0.0;
+    let final_wdl = 1.0;
 
     let mut trainer = ValueTrainerBuilder::default()
         .dual_perspective()
