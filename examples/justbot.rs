@@ -22,21 +22,21 @@ const NUM_OUTPUT_BUCKETS: usize = 8;
 
 #[rustfmt::skip]
 const BUCKET_LAYOUT: [usize; 32] = [
-    0, 0, 0, 0, 
-    0, 0, 0, 0,
-    1, 1, 1, 1, 
-    1, 1, 1, 1,
-    1, 1, 1, 1,
-    2, 2, 2, 2, 
+    0, 0, 1, 1, 
     2, 2, 2, 2,
-    2, 2, 2, 2,
+    3, 3, 3, 3, 
+    3, 3, 3, 3,
+    3, 3, 3, 3,
+    3, 3, 3, 3, 
+    3, 3, 3, 3,
+    3, 3, 3, 3,
 ];
 
 const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
     let dataset_path = "/home/hasan/Chess-Engine/bullet/data/combined.vf";
-    let net_id = "595b-1024";
+    let net_id = "725b4ib-1024";
 
     // hyperparams to fiddle with
     let hl_size = 1024;
@@ -105,7 +105,7 @@ fn main() {
         save_rate: 128,
     };
 
-    let settings = LocalSettings { threads: 4, test_set: None, output_directory: "checkpoints", batch_queue_size: 32 };
+    let settings = LocalSettings { threads: 8, test_set: None, output_directory: "checkpoints", batch_queue_size: 32 };
 
     // loading from a Viriformat binpack
     let data_loader = {
@@ -113,7 +113,7 @@ fn main() {
 
         let file_path = dataset_path;
         let buffer_size_mb = 1024;
-        let threads = 4;
+        let threads = 8;
 
         // The `viriformat` crate exposes a useful `Filter` of its own, but you can also
         // use a custom function like for SF binpacks with `ViriFilter::custom(function)`
