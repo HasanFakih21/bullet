@@ -35,7 +35,6 @@ const BUCKET_LAYOUT: [usize; 32] = [
 const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
-    let dataset_path = "data/combined.vf";
     let net_id = "725b4ib-1024";
 
     // hyperparams to fiddle with
@@ -111,7 +110,6 @@ fn main() {
     let data_loader = {
         use loader::viribinpack::{ViriBinpackLoader, ViriFilter};
 
-        let file_path = dataset_path;
         let buffer_size_mb = 1024;
         let threads = 8;
 
@@ -121,7 +119,23 @@ fn main() {
         mod advanced_filter;
         let filter = ViriFilter::Custom(advanced_filter::should_keep);
 
-        ViriBinpackLoader::new(file_path, buffer_size_mb, threads, filter)
+        ViriBinpackLoader::new_interleave_multiple(
+            &[
+                "data/279.pgn.vf",
+                "data/346.pgn.vf",
+                "data/409.pgn.vf",
+                "data/540.pgn.vf",
+                "data/541.pgn.vf",
+                "data/553.pgn.vf",
+                "data/595.pgn.vf",
+                "data/638.pgn.vf",
+                "data/704.pgn.vf",
+                "data/725.pgn.vf",
+            ],
+            buffer_size_mb,
+            threads,
+            filter,
+        )
     };
     trainer.run(&schedule, &settings, &data_loader);
 }
