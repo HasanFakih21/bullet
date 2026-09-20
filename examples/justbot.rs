@@ -35,7 +35,7 @@ const BUCKET_LAYOUT: [usize; 32] = [
 const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
-    let net_id = "725b4ib-1024";
+    let net_id = "754a4ib-1024";
 
     // hyperparams to fiddle with
     let hl_size = 1024;
@@ -131,6 +131,8 @@ fn main() {
                 "data/638.vf",
                 "data/704.vf",
                 "data/725.vf",
+                "data/731.vf",
+                "data/754.vf",
             ],
             buffer_size_mb,
             threads,
