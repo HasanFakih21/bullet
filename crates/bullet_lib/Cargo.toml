@@ -64,3 +64,7 @@ path = "../../examples/advanced/main.rs"
 [[example]]
 name = "justbot"
 path = "../../examples/justbot.rs"
+
+[[example]]
+name = "justbot-advanced"
+path = "../../examples/justbot-advanced.rs"
