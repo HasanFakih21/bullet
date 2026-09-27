@@ -35,7 +35,7 @@ const BUCKET_LAYOUT: [usize; 32] = [
 const NUM_INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 
 fn main() {
-    let net_id = "754a4ib-1024";
+    let net_id = "802a4ib-1024";
 
     // hyperparams to fiddle with
     let hl_size = 1024;
@@ -121,23 +121,26 @@ fn main() {
 
         ViriBinpackLoader::new_interleave_multiple(
             &[
-                "data/279.vf",
-                "data/346.vf",
-                "data/409.vf",
-                "data/540.vf",
-                "data/541.vf",
-                "data/553.vf",
-                "data/595.vf",
-                "data/638.vf",
-                "data/704.vf",
-                "data/725.vf",
-                "data/731.vf",
-                "data/754.vf",
+                "data/5ksn/279.vf",
+                "data/5ksn/346.vf",
+                "data/5ksn/409.vf",
+                "data/5ksn/540.vf",
+                "data/5ksn/541.vf",
+                "data/5ksn/553.vf",
+                "data/5ksn/595.vf",
+                "data/5ksn/638.vf",
+                "data/5ksn/704.vf",
+                "data/5ksn/725.vf",
+                "data/12ksn/731.vf",
+                "data/12ksn/754.vf",
+                "data/12ksn/797.vf",
+                "data/12ksn/802.vf",
             ],
             buffer_size_mb,
             threads,
             filter,
         )
     };
+
     trainer.run(&schedule, &settings, &data_loader);
 }
