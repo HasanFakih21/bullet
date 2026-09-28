@@ -27,7 +27,7 @@ use bullet_trainer::{
     run::{DefaultDevice, TrainingSchedule, TrainingSteps, train},
 };
 
-const NET_NAME: &str = "802d8ib-1024";
+const NET_NAME: &str = "802f8ib-1024ml";
 const READ_BUF_MB: usize = 8192;
 const READ_THREADS: usize = 8;
 const MAP_THREADS: u8 = 8;
@@ -36,11 +36,22 @@ const SAVE_RATE: usize = 32;
 const SUPERBATCHES_STAGE0: usize = 100;
 const SUPERBATCHES_STAGE1: usize = 800;
 const SUPERBATCHES_STAGE2: usize = 200;
-const L1: usize = 1024;
-const QA: i16 = 255;
-const QB: i16 = 64;
+
+const L1: usize = 768;
+const L2: usize = 16;
+const L3: usize = 32;
+
+const Q0: i16 = 255;
+const Q1: i16 = 128;
+const Q: i16 = 64;
+
 const INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
 const OUTPUT_BUCKETS: usize = 8;
+
+const FT_SHIFT: usize = 8;
+const FT_SHIFT_SCALE: f32 = Q0 as f32 / ((1 << FT_SHIFT) as f32);
+const I8_RANGE: f32 = i8::MAX as f32 / (Q1 as f32);
+const L1_RANGE: f32 = I8_RANGE * FT_SHIFT_SCALE * FT_SHIFT_SCALE;
 
 #[rustfmt::skip]
 const BUCKET_LAYOUT: [usize; 32] = [
@@ -66,19 +77,31 @@ fn main() {
 
     let defn = ModelDefinition::build(&inputs, |builder, (((stm_psqt, ntm_psqt), output_buckets), target)| {
         let l0f = builder.new_weights("l0/fac", (L1, 768), InitSettings::Zeroed);
-        let mut l0 = builder.new_affine("l0/", psqt.num_inputs(), L1);
+        let mut l0 = builder.new_affine("l0", 768 * INPUT_BUCKETS, L1);
+        l0.init_with_effective_input_size(32);
+        let psqt_init = InitSettings::Normal { mean: 0.0, stdev: (2f32 / 32.0).sqrt() };
+        l0.weights = builder.new_weights("l0/psqt", (L1, psqt.num_inputs()), psqt_init);
         l0.weights = l0.weights + l0f.repeat(INPUT_BUCKETS);
 
-        let l1 = builder.new_affine("l1/", 2 * L1, OUTPUT_BUCKETS);
+        let l1 = builder.new_affine("l1/", L1, OUTPUT_BUCKETS * L2);
+        let l2 = builder.new_affine("l2/", L2, OUTPUT_BUCKETS * L3);
+        let l3 = builder.new_affine("l3/", L3, OUTPUT_BUCKETS);
 
-        let stm_hidden = l0.forward(stm_psqt).screlu();
-        let ntm_hidden = l0.forward(ntm_psqt).screlu();
+        let ft = |input, start, end| l0.slice(start, end).forward(input).crelu();
+        let stm_hidden = ft(stm_psqt, 0, L1 / 2) * ft(stm_psqt, L1 / 2, L1);
+        let ntm_hidden = ft(ntm_psqt, 0, L1 / 2) * ft(ntm_psqt, L1 / 2, L1);
+
         let l0_out = stm_hidden.concat(ntm_hidden);
+        let l0_out_norm = l0_out.reduce_sum_rows() / (L1 as f32);
 
-        let l1_out = l1.forward(l0_out).select(output_buckets);
-        let loss = l1_out.sigmoid().squared_error(target);
+        let l1_out = l1.forward(l0_out).select(output_buckets).screlu();
+        let l2_out = l2.forward(l1_out).select(output_buckets).screlu();
+        let l3_out = l3.forward(l2_out).select(output_buckets);
 
-        (Some(loss.reduce_sum_batch()), vec![("output".to_string(), l1_out)])
+        let loss = l3_out.sigmoid().squared_error(target);
+        let loss = loss + 0.005 * l0_out_norm;
+
+        (Some(loss.reduce_sum_batch()), vec![("output".to_string(), l3_out)])
     });
 
     let weights = ModelWeights::new(&defn, 12412421);
@@ -90,20 +113,30 @@ fn main() {
 
     let l0_clip = AdamWParams { max_weight: 0.99, min_weight: -0.99, ..Default::default() };
     optimiser.set_params_for_weight("l0/fac", l0_clip);
-    optimiser.set_params_for_weight("l0/w", l0_clip);
+    optimiser.set_params_for_weight("l0/psqt", l0_clip);
+
+    let l1_clip = AdamWParams { max_weight: L1_RANGE, min_weight: -L1_RANGE, ..Default::default() };
+    optimiser.set_params_for_weight("l1/w", l1_clip);
 
     let saved_format = vec![
-        SavedFormat::id("l0/w")
+        SavedFormat::id("l0/psqt")
             .transform(|weights, values| {
                 let fac = weights.get("l0/fac").values.f32().repeat(INPUT_BUCKETS);
                 assert_eq!(values.len(), fac.len());
                 values.iter().zip(fac).map(|(&a, b)| a + b).collect()
             })
             .round()
-            .quantise::<i16>(QA),
-        SavedFormat::id("l0/b").round().quantise::<i16>(QA),
-        SavedFormat::id("l1/w").round().quantise::<i16>(QB).transpose(),
-        SavedFormat::id("l1/b").round().quantise::<i16>(QA * QB),
+            .quantise::<i16>(Q0),
+        SavedFormat::id("l0/b").round().quantise::<i16>(Q0),
+        SavedFormat::id("l1/w")
+            .transform(|_, values| values.iter().map(|f| f / (FT_SHIFT_SCALE * FT_SHIFT_SCALE)).collect())
+            .round()
+            .quantise::<i8>(Q1),
+        SavedFormat::id("l1/b").round().quantise::<i32>(i32::from(Q) * 256),
+        SavedFormat::id("l2/w").round().quantise::<i32>(i32::from(Q)),
+        SavedFormat::id("l2/b").round().quantise::<i32>(i32::from(Q).pow(3)),
+        SavedFormat::id("l3/w").round().quantise::<i32>(i32::from(Q)),
+        SavedFormat::id("l3/b").round().quantise::<i32>(i32::from(Q).pow(4)),
     ];
 
     let reader = ViriBinpackLoader::new_interleave_multiple(
