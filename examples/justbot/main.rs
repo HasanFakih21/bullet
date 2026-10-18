@@ -1,6 +1,4 @@
-#[path = "advanced/filter.rs"]
 mod filter;
-#[path = "justbot/inputs.rs"]
 mod inputs;
 
 use bullet_lib::{
@@ -27,32 +25,61 @@ use bullet_trainer::{
     run::{DefaultDevice, TrainingSchedule, TrainingSteps, train},
 };
 
-const NET_NAME: &str = "802d8ib-1024";
+const NET_NAME: &str = "938b10ib-1024ml";
 const READ_BUF_MB: usize = 8192;
 const READ_THREADS: usize = 8;
 const MAP_THREADS: u8 = 8;
 const SAVE_RATE: usize = 32;
 
+const L1: usize = 1024;
+const L2: usize = 16;
+const L3: usize = 32;
+const Q0: i16 = 255;
+const Q1: i16 = 128;
+const Q: i16 = 64;
+const INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
+const OUTPUT_BUCKETS: usize = 8;
+
+const FT_SHIFT: usize = 8;
+const FT_SHIFT_SCALE: f32 = Q0 as f32 / ((1 << FT_SHIFT) as f32);
+const I8_RANGE: f32 = i8::MAX as f32 / (Q1 as f32);
+const L1_RANGE: f32 = I8_RANGE * FT_SHIFT_SCALE * FT_SHIFT_SCALE;
+
 const SUPERBATCHES_STAGE0: usize = 100;
 const SUPERBATCHES_STAGE1: usize = 800;
 const SUPERBATCHES_STAGE2: usize = 200;
-const L1: usize = 1024;
-const QA: i16 = 255;
-const QB: i16 = 64;
-const INPUT_BUCKETS: usize = get_num_buckets(&BUCKET_LAYOUT);
-const OUTPUT_BUCKETS: usize = 8;
 
 #[rustfmt::skip]
 const BUCKET_LAYOUT: [usize; 32] = [
     0,  1,  2,  3,
     4,  4,  5,  5,
     6,  6,  6,  6,
-    6,  6,  6,  6,
     7,  7,  7,  7,
-    7,  7,  7,  7,
-    7,  7,  7,  7,
-    7,  7,  7,  7,
+    8,  8,  8,  8,
+    8,  8,  8,  8,
+    9,  9,  9,  9,
+    9,  9,  9,  9,
 ];
+
+// [input][bucket][output] -> [bucket][input / input_group][output][input % input_group]
+fn pack_weights(values: Vec<f32>, inputs: usize, outputs: usize, input_group: usize) -> Vec<f32> {
+    assert_eq!(values.len(), inputs * OUTPUT_BUCKETS * outputs);
+    assert_eq!(inputs % input_group, 0);
+
+    let mut packed = vec![0.0; values.len()];
+    for bucket in 0..OUTPUT_BUCKETS {
+        for input in 0..inputs {
+            for output in 0..outputs {
+                let src = (input * OUTPUT_BUCKETS + bucket) * outputs + output;
+                let dst = bucket * inputs * outputs
+                    + ((input / input_group) * outputs + output) * input_group
+                    + input % input_group;
+                packed[dst] = values[src];
+            }
+        }
+    }
+    packed
+}
 
 fn main() {
     let psqt = ChessBucketsMirrored::new(BUCKET_LAYOUT);
@@ -67,18 +94,25 @@ fn main() {
     let defn = ModelDefinition::build(&inputs, |builder, (((stm_psqt, ntm_psqt), output_buckets), target)| {
         let l0f = builder.new_weights("l0/fac", (L1, 768), InitSettings::Zeroed);
         let mut l0 = builder.new_affine("l0/", psqt.num_inputs(), L1);
+        // l0.init_with_effective_input_size(32);
         l0.weights = l0.weights + l0f.repeat(INPUT_BUCKETS);
 
-        let l1 = builder.new_affine("l1/", 2 * L1, OUTPUT_BUCKETS);
+        let l1 = builder.new_affine("l1/", L1, OUTPUT_BUCKETS * L2);
+        let l2 = builder.new_affine("l2/", L2, OUTPUT_BUCKETS * L3);
+        let l3 = builder.new_affine("l3/", L3, OUTPUT_BUCKETS);
 
-        let stm_hidden = l0.forward(stm_psqt).screlu();
-        let ntm_hidden = l0.forward(ntm_psqt).screlu();
-        let l0_out = stm_hidden.concat(ntm_hidden);
+        let ft = |input, start, end| l0.slice(start, end).forward(input).crelu();
+        let stm_hidden = ft(stm_psqt, 0, L1 / 2) * ft(stm_psqt, L1 / 2, L1);
+        let ntm_hidden = ft(ntm_psqt, 0, L1 / 2) * ft(ntm_psqt, L1 / 2, L1);
 
-        let l1_out = l1.forward(l0_out).select(output_buckets);
-        let loss = l1_out.sigmoid().squared_error(target);
+        let hl1 = stm_hidden.concat(ntm_hidden);
+        let hl2 = l1.forward(hl1).select(output_buckets).screlu();
+        let hl3 = l2.forward(hl2).select(output_buckets).crelu();
+        let l3_out = l3.forward(hl3).select(output_buckets);
 
-        (Some(loss.reduce_sum_batch()), vec![("output".to_string(), l1_out)])
+        let loss = l3_out.sigmoid().squared_error(target);
+
+        (Some(loss.reduce_sum_batch()), vec![("output".to_string(), l3_out)])
     });
 
     let weights = ModelWeights::new(&defn, 12412421);
@@ -92,6 +126,9 @@ fn main() {
     optimiser.set_params_for_weight("l0/fac", l0_clip);
     optimiser.set_params_for_weight("l0/w", l0_clip);
 
+    let l1_clip = AdamWParams { max_weight: L1_RANGE, min_weight: -L1_RANGE, ..Default::default() };
+    optimiser.set_params_for_weight("l1/w", l1_clip);
+
     let saved_format = vec![
         SavedFormat::id("l0/w")
             .transform(|weights, values| {
@@ -100,10 +137,24 @@ fn main() {
                 values.iter().zip(fac).map(|(&a, b)| a + b).collect()
             })
             .round()
-            .quantise::<i16>(QA),
-        SavedFormat::id("l0/b").round().quantise::<i16>(QA),
-        SavedFormat::id("l1/w").round().quantise::<i16>(QB).transpose(),
-        SavedFormat::id("l1/b").round().quantise::<i16>(QA * QB),
+            .quantise::<i16>(Q0),
+        SavedFormat::id("l0/b").round().quantise::<i16>(Q0),
+        SavedFormat::id("l1/w")
+            .transform(|_, values| values.iter().map(|f| f / (FT_SHIFT_SCALE * FT_SHIFT_SCALE)).collect())
+            .transform(|_, values| pack_weights(values, L1, L2, 4))
+            .round()
+            .quantise::<i8>(Q1),
+        SavedFormat::id("l1/b").round().quantise::<i32>(i32::from(Q) * 256),
+        SavedFormat::id("l2/w")
+            .transform(|_, values| pack_weights(values, L2, L3, 1))
+            .round()
+            .quantise::<i32>(i32::from(Q)),
+        SavedFormat::id("l2/b").round().quantise::<i32>(i32::from(Q).pow(3)),
+        SavedFormat::id("l3/w")
+            .transform(|_, values| pack_weights(values, L3, 1, 1))
+            .round()
+            .quantise::<i32>(i32::from(Q)),
+        SavedFormat::id("l3/b").round().quantise::<i32>(i32::from(Q).pow(4)),
     ];
 
     let reader = ViriBinpackLoader::new_interleave_multiple(
@@ -122,6 +173,9 @@ fn main() {
             "data/12ksn/754.vf",
             "data/12ksn/797.vf",
             "data/12ksn/802.vf",
+            "data/12ksn/844.vf",
+            "data/12ksn/875.vf",
+            "data/ml-12ksn/938.vf",
         ],
         READ_BUF_MB,
         READ_THREADS,
@@ -129,7 +183,15 @@ fn main() {
     );
 
     let final_reader = ViriBinpackLoader::new_interleave_multiple(
-        &["data/12ksn/731.vf", "data/12ksn/754.vf", "data/12ksn/797.vf", "data/12ksn/802.vf"],
+        &[
+            "data/12ksn/731.vf",
+            "data/12ksn/754.vf",
+            "data/12ksn/797.vf",
+            "data/12ksn/802.vf",
+            "data/12ksn/844.vf",
+            "data/12ksn/875.vf",
+            "data/ml-12ksn/938.vf",
+        ],
         READ_BUF_MB,
         READ_THREADS,
         ViriFilter::Custom(filter::should_keep),
