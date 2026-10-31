@@ -25,7 +25,7 @@ use bullet_trainer::{
     run::{DefaultDevice, TrainingSchedule, TrainingSteps, train},
 };
 
-const NET_NAME: &str = "938b10ib-1024ml";
+const NET_NAME: &str = "983d16ib-1024ml";
 const READ_BUF_MB: usize = 8192;
 const READ_THREADS: usize = 8;
 const MAP_THREADS: u8 = 8;
@@ -51,14 +51,14 @@ const SUPERBATCHES_STAGE2: usize = 200;
 
 #[rustfmt::skip]
 const BUCKET_LAYOUT: [usize; 32] = [
-    0,  1,  2,  3,
-    4,  4,  5,  5,
-    6,  6,  6,  6,
-    7,  7,  7,  7,
-    8,  8,  8,  8,
-    8,  8,  8,  8,
-    9,  9,  9,  9,
-    9,  9,  9,  9,
+     0,  1,  2,  3,
+     4,  5,  6,  7,
+     8,  8,  9,  9,
+    10, 10, 11, 11,
+    12, 12, 13, 13,
+    12, 12, 13, 13,
+    14, 14, 15, 15,
+    14, 14, 15, 15,
 ];
 
 // [input][bucket][output] -> [bucket][input / input_group][output][input % input_group]
@@ -176,6 +176,8 @@ fn main() {
             "data/12ksn/844.vf",
             "data/12ksn/875.vf",
             "data/ml-12ksn/938.vf",
+            "data/ml-12ksn/969.vf",
+            "data/ml-12ksn/983.vf",
         ],
         READ_BUF_MB,
         READ_THREADS,
@@ -191,6 +193,8 @@ fn main() {
             "data/12ksn/844.vf",
             "data/12ksn/875.vf",
             "data/ml-12ksn/938.vf",
+            "data/ml-12ksn/969.vf",
+            "data/ml-12ksn/983.vf",
         ],
         READ_BUF_MB,
         READ_THREADS,
