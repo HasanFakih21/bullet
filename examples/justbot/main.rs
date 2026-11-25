@@ -25,7 +25,7 @@ use bullet_trainer::{
     run::{DefaultDevice, HostPool, TrainingSchedule, TrainingSteps, train},
 };
 
-const NET_NAME: &str = "983d16ib-1024ml";
+const NET_NAME: &str = "1100a16ib-1024ml";
 const READ_BUF_MB: usize = 8192;
 const READ_THREADS: usize = 8;
 const MAP_THREADS: u8 = 8;
@@ -159,16 +159,25 @@ fn main() {
 
     let reader = ViriBinpackLoader::new_interleave_multiple(
         &[
-            "data/5ksn/279.vf",
-            "data/5ksn/346.vf",
-            "data/5ksn/409.vf",
-            "data/5ksn/540.vf",
-            "data/5ksn/541.vf",
-            "data/5ksn/553.vf",
-            "data/5ksn/595.vf",
-            "data/5ksn/638.vf",
-            "data/5ksn/704.vf",
-            "data/5ksn/725.vf",
+            "data/relabelled/teacher-v1/old/2.vf",
+            "data/relabelled/teacher-v1/old/12.vf",
+            "data/relabelled/teacher-v1/old/20.vf",
+            "data/relabelled/teacher-v1/old/52.vf",
+            "data/relabelled/teacher-v1/old/54.vf",
+            "data/relabelled/teacher-v1/old/116.vf",
+            "data/relabelled/teacher-v1/old/176.vf",
+            "data/relabelled/teacher-v1/old/277.vf",
+            "data/relabelled/teacher-v1/old/278.vf",
+            "data/relabelled/teacher-v1/5ksn/279.vf",
+            "data/relabelled/teacher-v1/5ksn/346.vf",
+            "data/relabelled/teacher-v1/5ksn/409.vf",
+            "data/relabelled/teacher-v1/5ksn/540.vf",
+            "data/relabelled/teacher-v1/5ksn/541.vf",
+            "data/relabelled/teacher-v1/5ksn/553.vf",
+            "data/relabelled/teacher-v1/5ksn/595.vf",
+            "data/relabelled/teacher-v1/5ksn/638.vf",
+            "data/relabelled/teacher-v1/5ksn/704.vf",
+            "data/relabelled/teacher-v1/5ksn/725.vf",
             "data/12ksn/731.vf",
             "data/12ksn/754.vf",
             "data/12ksn/797.vf",
@@ -178,6 +187,8 @@ fn main() {
             "data/ml-12ksn/938.vf",
             "data/ml-12ksn/969.vf",
             "data/ml-12ksn/983.vf",
+            "data/ml-25ksn/1081.vf",
+            "data/ml-25ksn/1100.vf",
         ],
         READ_BUF_MB,
         READ_THREADS,
@@ -195,6 +206,8 @@ fn main() {
             "data/ml-12ksn/938.vf",
             "data/ml-12ksn/969.vf",
             "data/ml-12ksn/983.vf",
+            "data/ml-25ksn/1081.vf",
+            "data/ml-25ksn/1100.vf",
         ],
         READ_BUF_MB,
         READ_THREADS,
